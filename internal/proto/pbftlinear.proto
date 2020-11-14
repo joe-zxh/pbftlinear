@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package proto;
 
-import "gorums.proto";
-
 import "google/protobuf/empty.proto";
 
 option go_package = "github.com/joe-zxh/pbftlinear/internal/proto";
@@ -16,7 +14,6 @@ service PBFTLinear {
   }
 
   rpc Commit(CommitArgs) returns (google.protobuf.Empty) {
-    option (gorums.multicast) = true;
   }
 }
 
