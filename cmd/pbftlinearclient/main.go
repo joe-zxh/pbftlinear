@@ -169,6 +169,10 @@ func main() {
 	latency := stats.LatencyAvg / float64(time.Millisecond)
 	latencySD := math.Sqrt(stats.LatencyVar) / float64(time.Millisecond)
 
+	if stats.TotalOps == conf.MaxInflight {
+		fmt.Println(`Warning: 可能一个完成的请求都没有`)
+	}
+
 	if !conf.Benchmark {
 		fmt.Printf("Throughput (ops/sec): %.2f, Latency (ms): %.2f, Latency Std.dev (ms): %.2f\n",
 			throughput,
