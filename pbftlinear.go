@@ -6,7 +6,10 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/joe-zxh/pbftlinear/data"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"log"
@@ -61,12 +64,10 @@ func New(conf *config.ReplicaConfig, tls bool, connectTimeout, qcTimeout time.Du
 //Start starts the server and client
 func (pbftlinear *PBFTLinear) Start() error {
 	addr := pbftlinear.Config.Replicas[pbftlinear.Config.ID].Address
-	fmt.Println(`before startServer`)
 	err := pbftlinear.startServer(addr)
 	if err != nil {
 		return fmt.Errorf("Failed to start GRPC Server: %w", err)
 	}
-	fmt.Println(`before startClient`)
 	err = pbftlinear.startClient(pbftlinear.connectTimeout)
 	if err != nil {
 		return fmt.Errorf("Failed to start GRPC Clients: %w", err)
@@ -95,7 +96,6 @@ func (pbftlinear *PBFTLinear) startClient(connectTimeout time.Duration) error {
 				log.Fatalf("connect error: %v", err)
 				conn.Close()
 			} else {
-				fmt.Printf("connect sucess to: %d\n", rid)
 				pbftlinear.conns[rid] = conn
 				c := proto.NewPBFTLinearClient(conn)
 				pbftlinear.nodes[rid] = &c
@@ -161,9 +161,49 @@ func (pbftlinear *PBFTLinear) Propose(timeout bool) {
 	}
 }
 
+func (pbftlinear *PBFTLinear) handlePrePrepare(pp *data.PrePrepareArgs) (*proto.PrePrepareReply, error) {
+
+	pbftlinear.PBFTLinearCore.Mut.Lock()
+
+	if !pbftlinear.Changing && pbftlinear.View == pp.View {
+
+		ent := pbftlinear.GetEntry(data.EntryID{V: pp.View, N: pp.Seq})
+		pbftlinear.PBFTLinearCore.Mut.Unlock()
+
+		ent.Mut.Lock()
+		if ent.Digest == nil {
+			ent.PP = pp
+			ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.Hash().ToSlice())
+			if err != nil {
+				fmt.Println(err)
+				return nil, err
+			}
+
+			ppReply := &proto.PrePrepareReply{
+				Sig: ps.tofawefawefawf,
+			}
+			ent.Mut.Unlock()
+		} else {
+			ent.Mut.Unlock()
+			fmt.Println(`多个具有相同seq的preprepare`)
+			return nil, errors.New(`多个具有相同seq的preprepare`)
+		}
+
+	} else {
+		pbftlinear.PBFTLinearCore.Mut.Unlock()
+	}
+}
+
 func (pbftlinear *PBFTLinear) PrePrepare(context.Context, *proto.PrePrepareArgs) (*proto.PrePrepareReply, error) {
-	fmt.Println(`fuckyou`)
 	return nil, status.Errorf(codes.Unimplemented, "method PrePrepare not implemented")
+}
+
+func (pbftlinear *PBFTLinear) Prepare(context.Context, *proto.PrepareArgs) (*proto.PrepareReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Prepare not implemented")
+}
+
+func (pbftlinear *PBFTLinear) Commit(context.Context, *proto.CommitArgs) (*empty.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Commit not implemented")
 }
 
 func newPBFTLinearServer(pbftlinear *PBFTLinear) *pbftLinearServer {

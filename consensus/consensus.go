@@ -32,6 +32,7 @@ type PBFTLinearCore struct {
 
 	cmdCache *data.CommandSet // Contains the commands that are waiting to be proposed
 	Config   *config.ReplicaConfig
+	SigCache *data.SignatureCache
 	cancel   context.CancelFunc // stops goroutines
 
 	Exec chan []data.Command
@@ -102,6 +103,7 @@ func New(conf *config.ReplicaConfig) *PBFTLinearCore {
 		// from hotstuff
 		Config:   conf,
 		cancel:   cancel,
+		SigCache: data.NewSignatureCache(conf),
 		cmdCache: data.NewCommandSet(),
 		Exec:     make(chan []data.Command, 1),
 

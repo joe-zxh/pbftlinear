@@ -198,6 +198,8 @@ github.com/relab/gorums v0.2.1-0.20200712223440-c8898b990cd6 h1:cgzlYyQVxAYZVuJ8
 github.com/relab/gorums v0.2.1-0.20200712223440-c8898b990cd6/go.mod h1:Qa/05eafbBu1K2Xex/iJJTobwGx4fyRx/HGsIVCY5wk=
 github.com/relab/gorums v0.2.1 h1:JL+f/VGndjU17lpQ9vBV13vv2o1+nGDahnT/SO/ssDI=
 github.com/relab/gorums v0.2.1/go.mod h1:Qa/05eafbBu1K2Xex/iJJTobwGx4fyRx/HGsIVCY5wk=
+github.com/relab/hotstuff v0.0.0-20200729074729-d55ff28585e5 h1:KpWWvweHD7T/Trqa7LumgLisTvP6LfRPie2nia/iKVs=
+github.com/relab/hotstuff v0.0.0-20200729074729-d55ff28585e5/go.mod h1:YCEM+e/HepOfb9VQclPvOo9aLi+ZThXx4V9qeCwHAdA=
 github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af/go.mod h1:XWv6SoW27p1b0cqNHllgS5HIMJraePCO15w5zCzIWYg=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/ryanuber/columnize v0.0.0-20160712163229-9b3edd62028f/go.mod h1:sm1tb6uqfes/u+d4ooFouqFdy9/2g9QGwK3SQygK0Ts=

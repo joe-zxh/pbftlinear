@@ -6,6 +6,7 @@ require (
 	github.com/felixge/fgprof v0.9.1
 	github.com/golang/protobuf v1.4.3
 	github.com/relab/gorums v0.2.1
+	github.com/relab/hotstuff v0.0.0-20200729074729-d55ff28585e5 // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.7.1
 	go.uber.org/atomic v1.4.0

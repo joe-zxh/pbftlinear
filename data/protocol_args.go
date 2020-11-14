@@ -28,12 +28,13 @@ type CommitArgs struct {
 	Sender uint32
 }
 
-type PartialSig struct {
-	ReplicaID int32
-	R         []byte
-	S         []byte
-}
-
-type QuorumCert struct {
-	Sigs []*PartialSig
-}
+//
+//type PartialSig struct {
+//	ReplicaID int32
+//	R         []byte
+//	S         []byte
+//}
+//
+//type QuorumCert struct {
+//	Sigs []*PartialSig
+//}
