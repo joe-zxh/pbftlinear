@@ -9,8 +9,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/joe-zxh/pbft/config"
-	"github.com/joe-zxh/pbft/data"
+	"github.com/joe-zxh/pbftlinear/config"
+	"github.com/joe-zxh/pbftlinear/data"
 )
 
 var pk ecdsa.PrivateKey

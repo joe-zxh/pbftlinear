@@ -1,7 +1,7 @@
 package consensus
 
 import (
-	"github.com/joe-zxh/pbft/internal/proto"
+	"github.com/joe-zxh/pbftlinear/internal/proto"
 	"sync"
 )
 
@@ -41,21 +41,21 @@ type CheckPointArgs struct {
 // When the checkpoint didn't exist then, it must been deleted or it's a new checkpoint
 // so this function will also check the hold checkpoint, if there is any checkpoint newer than
 // it, it will return nil
-func (pbft *PBFTCore) getCheckPoint(seq int) *CheckPoint {
-	_, ok := pbft.cps[seq]
+func (pbftlinear *PBFTLinearCore) getCheckPoint(seq int) *CheckPoint {
+	_, ok := pbftlinear.cps[seq]
 	if !ok {
-		for k, v := range pbft.cps {
+		for k, v := range pbftlinear.cps {
 			if k > seq && v.Stable {
 				return nil
 			}
 		}
 
-		pbft.cps[seq] = &CheckPoint{
+		pbftlinear.cps[seq] = &CheckPoint{
 			Seq:    seq,
 			Stable: false,
 			State:  nil,
 			Proof:  make([]*CheckPointArgs, 0),
 		}
 	}
-	return pbft.cps[seq]
+	return pbftlinear.cps[seq]
 }

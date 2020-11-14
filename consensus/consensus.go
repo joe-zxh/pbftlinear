@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/joe-zxh/pbft/config"
-	"github.com/joe-zxh/pbft/data"
-	"github.com/joe-zxh/pbft/internal/logging"
-	"github.com/joe-zxh/pbft/util"
+	"github.com/joe-zxh/pbftlinear/config"
+	"github.com/joe-zxh/pbftlinear/data"
+	"github.com/joe-zxh/pbftlinear/internal/logging"
+	"github.com/joe-zxh/pbftlinear/util"
 )
 
 const (
@@ -26,8 +26,8 @@ func init() {
 	logger = logging.GetLogger()
 }
 
-// PBFTCore is the safety core of the PBFTCore protocol
-type PBFTCore struct {
+// PBFTLinearCore is the safety core of the PBFTLinearCore protocol
+type PBFTLinearCore struct {
 	// from hotstuff
 
 	cmdCache *data.CommandSet // Contains the commands that are waiting to be proposed
@@ -36,7 +36,7 @@ type PBFTCore struct {
 
 	Exec chan []data.Command
 
-	// from pbft
+	// from pbftlinear
 	Mut        sync.Mutex // Lock for all internal data
 	ID         uint32
 	tSeq       atomic.Uint32           // Total sequence number of next request
@@ -62,50 +62,50 @@ type PBFTCore struct {
 	IsLeader bool   // view改变的时候，再改变
 }
 
-func (pbft *PBFTCore) AddCommand(command data.Command) {
-	pbft.cmdCache.Add(command)
+func (pbftlinear *PBFTLinearCore) AddCommand(command data.Command) {
+	pbftlinear.cmdCache.Add(command)
 }
 
-func (pbft *PBFTCore) CommandSetLen(command data.Command) int {
-	return pbft.cmdCache.Len()
+func (pbftlinear *PBFTLinearCore) CommandSetLen(command data.Command) int {
+	return pbftlinear.cmdCache.Len()
 }
 
 // CreateProposal creates a new proposal
-func (pbft *PBFTCore) CreateProposal(timeout bool) *data.PrePrepareArgs {
+func (pbftlinear *PBFTLinearCore) CreateProposal(timeout bool) *data.PrePrepareArgs {
 
 	var batch []data.Command
 
 	if timeout { // timeout的时候，不管够不够batch都要发起共识。
-		batch = pbft.cmdCache.RetriveFirst(pbft.Config.BatchSize)
+		batch = pbftlinear.cmdCache.RetriveFirst(pbftlinear.Config.BatchSize)
 	} else {
-		batch = pbft.cmdCache.RetriveExactlyFirst(pbft.Config.BatchSize)
+		batch = pbftlinear.cmdCache.RetriveExactlyFirst(pbftlinear.Config.BatchSize)
 	}
 
 	if batch == nil {
 		return nil
 	}
 	e := &data.PrePrepareArgs{
-		View:     pbft.View,
-		Seq:      pbft.tSeq.Inc(),
+		View:     pbftlinear.View,
+		Seq:      pbftlinear.tSeq.Inc(),
 		Commands: batch,
 	}
 	return e
 }
 
-// New creates a new PBFTCore instance
-func New(conf *config.ReplicaConfig) *PBFTCore {
+// New creates a new PBFTLinearCore instance
+func New(conf *config.ReplicaConfig) *PBFTLinearCore {
 	logger.SetPrefix(fmt.Sprintf("hs(id %d): ", conf.ID))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	pbft := &PBFTCore{
+	pbftlinear := &PBFTLinearCore{
 		// from hotstuff
 		Config:   conf,
 		cancel:   cancel,
 		cmdCache: data.NewCommandSet(),
 		Exec:     make(chan []data.Command, 1),
 
-		// pbft
+		// pbftlinear
 		ID:         uint32(conf.ID),
 		seqmap:     make(map[data.EntryID]uint32),
 		View:       1,
@@ -124,21 +124,21 @@ func New(conf *config.ReplicaConfig) *PBFTCore {
 		vcs:        make(map[uint32][]*ViewChangeArgs),
 		lastcp:     0,
 	}
-	pbft.q = pbft.f*2 + 1
-	pbft.Leader = (pbft.View-1)%pbft.n + 1
-	pbft.IsLeader = (pbft.Leader == pbft.ID)
+	pbftlinear.q = pbftlinear.f*2 + 1
+	pbftlinear.Leader = (pbftlinear.View-1)%pbftlinear.n + 1
+	pbftlinear.IsLeader = (pbftlinear.Leader == pbftlinear.ID)
 
 	// Put an initial stable checkpoint
-	cp := pbft.getCheckPoint(-1)
+	cp := pbftlinear.getCheckPoint(-1)
 	cp.Stable = true
-	cp.State = pbft.state
+	cp.State = pbftlinear.state
 
-	go pbft.proposeConstantly(ctx)
+	go pbftlinear.proposeConstantly(ctx)
 
-	return pbft
+	return pbftlinear
 }
 
-func (pbft *PBFTCore) proposeConstantly(ctx context.Context) {
+func (pbftlinear *PBFTLinearCore) proposeConstantly(ctx context.Context) {
 	for {
 		select {
 		// todo: 一个计时器，如果是leader，就开始preprepare
@@ -148,26 +148,26 @@ func (pbft *PBFTCore) proposeConstantly(ctx context.Context) {
 	}
 }
 
-func (pbft *PBFTCore) Close() {
-	pbft.cancel()
+func (pbftlinear *PBFTLinearCore) Close() {
+	pbftlinear.cancel()
 }
 
-func (pbft *PBFTCore) GetExec() chan []data.Command {
-	return pbft.Exec
+func (pbftlinear *PBFTLinearCore) GetExec() chan []data.Command {
+	return pbftlinear.Exec
 }
 
-func (pbft *PBFTCore) GetEntry(id data.EntryID) *data.Entry {
-	_, ok := pbft.Log[id]
+func (pbftlinear *PBFTLinearCore) GetEntry(id data.EntryID) *data.Entry {
+	_, ok := pbftlinear.Log[id]
 	if !ok {
-		pbft.Log[id] = &data.Entry{}
+		pbftlinear.Log[id] = &data.Entry{}
 	}
-	return pbft.Log[id]
+	return pbftlinear.Log[id]
 }
 
 // Lock ent.lock before call this function
 // Locks : acquire s.lock before call this function
-func (pbft *PBFTCore) Prepared(ent *data.Entry) bool {
-	if len(ent.P) > int(2*pbft.f) {
+func (pbftlinear *PBFTLinearCore) Prepared(ent *data.Entry) bool {
+	if len(ent.P) > int(2*pbftlinear.f) {
 		// Key is the id of sender replica
 		validSet := make(map[uint32]bool)
 		for i, sz := 0, len(ent.P); i < sz; i++ {
@@ -175,14 +175,14 @@ func (pbft *PBFTCore) Prepared(ent *data.Entry) bool {
 				validSet[ent.P[i].Sender] = true
 			}
 		}
-		return len(validSet) > int(2*pbft.f)
+		return len(validSet) > int(2*pbftlinear.f)
 	}
 	return false
 }
 
 // Locks : acquire s.lock before call this function
-func (pbft *PBFTCore) Committed(ent *data.Entry) bool {
-	if len(ent.C) > int(2*pbft.f) {
+func (pbftlinear *PBFTLinearCore) Committed(ent *data.Entry) bool {
+	if len(ent.C) > int(2*pbftlinear.f) {
 		// Key is replica id
 		validSet := make(map[uint32]bool)
 		for i, sz := 0, len(ent.C); i < sz; i++ {
@@ -190,7 +190,7 @@ func (pbft *PBFTCore) Committed(ent *data.Entry) bool {
 				validSet[ent.C[i].Sender] = true
 			}
 		}
-		return len(validSet) > int(2*pbft.f)
+		return len(validSet) > int(2*pbftlinear.f)
 	}
 	return false
 }

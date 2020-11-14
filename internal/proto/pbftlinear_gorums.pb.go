@@ -1256,42 +1256,6 @@ func appendIfNotPresent(set []uint32, x uint32) []uint32 {
 // Reference imports to suppress errors if they are not otherwise used.
 var _ empty.Empty
 
-// PrePrepare is a one-way multicast call on all nodes in configuration c,
-// with the same in argument. The call is asynchronous and has no return value.
-func (c *Configuration) PrePrepare(in *PrePrepareArgs) error {
-	msgID := c.mgr.nextMsgID()
-	metadata := &ordering.Metadata{
-		MessageID: msgID,
-		MethodID:  prePrepareMethodID,
-	}
-	msg := &gorumsMessage{metadata: metadata, message: in}
-	for _, n := range c.nodes {
-		n.sendQ <- msg
-	}
-	return nil
-}
-
-// Reference imports to suppress errors if they are not otherwise used.
-var _ empty.Empty
-
-// Prepare is a one-way multicast call on all nodes in configuration c,
-// with the same in argument. The call is asynchronous and has no return value.
-func (c *Configuration) Prepare(in *PrepareArgs) error {
-	msgID := c.mgr.nextMsgID()
-	metadata := &ordering.Metadata{
-		MessageID: msgID,
-		MethodID:  prepareMethodID,
-	}
-	msg := &gorumsMessage{metadata: metadata, message: in}
-	for _, n := range c.nodes {
-		n.sendQ <- msg
-	}
-	return nil
-}
-
-// Reference imports to suppress errors if they are not otherwise used.
-var _ empty.Empty
-
 // Commit is a one-way multicast call on all nodes in configuration c,
 // with the same in argument. The call is asynchronous and has no return value.
 func (c *Configuration) Commit(in *CommitArgs) error {
@@ -1308,9 +1272,12 @@ func (c *Configuration) Commit(in *CommitArgs) error {
 }
 
 type nodeServices struct {
+	PBFTLinearClient
 }
 
 func (n *Node) connectStream(ctx context.Context) (err error) {
+
+	n.PBFTLinearClient = NewPBFTLinearClient(n.conn)
 
 	return nil
 }
@@ -1319,26 +1286,16 @@ func (n *Node) closeStream() (err error) {
 	return err
 }
 
-// QuorumSpec is the interface of quorum functions for PBFT.
+// QuorumSpec is the interface of quorum functions for PBFTLinear.
 type QuorumSpec interface {
 }
 
-// PBFT is the server-side API for the PBFT Service
-type PBFT interface {
-	PrePrepare(context.Context, *PrePrepareArgs)
-	Prepare(context.Context, *PrepareArgs)
+// PBFTLinear is the server-side API for the PBFTLinear Service
+type PBFTLinear interface {
 	Commit(context.Context, *CommitArgs)
 }
 
-func (s *GorumsServer) RegisterPBFTServer(srv PBFT) {
-	s.srv.handlers[prePrepareMethodID] = func(ctx context.Context, in *gorumsMessage, _ chan<- *gorumsMessage) {
-		req := in.message.(*PrePrepareArgs)
-		srv.PrePrepare(ctx, req)
-	}
-	s.srv.handlers[prepareMethodID] = func(ctx context.Context, in *gorumsMessage, _ chan<- *gorumsMessage) {
-		req := in.message.(*PrepareArgs)
-		srv.Prepare(ctx, req)
-	}
+func (s *GorumsServer) RegisterPBFTLinearServer(srv PBFTLinear) {
 	s.srv.handlers[commitMethodID] = func(ctx context.Context, in *gorumsMessage, _ chan<- *gorumsMessage) {
 		req := in.message.(*CommitArgs)
 		srv.Commit(ctx, req)
@@ -1347,13 +1304,9 @@ func (s *GorumsServer) RegisterPBFTServer(srv PBFT) {
 
 const hasOrderingMethods = true
 
-const prePrepareMethodID int32 = 0
-const prepareMethodID int32 = 1
-const commitMethodID int32 = 2
+const commitMethodID int32 = 0
 
 var orderingMethods = map[int32]methodInfo{
 
-	0: {requestType: new(PrePrepareArgs).ProtoReflect(), responseType: new(empty.Empty).ProtoReflect()},
-	1: {requestType: new(PrepareArgs).ProtoReflect(), responseType: new(empty.Empty).ProtoReflect()},
-	2: {requestType: new(CommitArgs).ProtoReflect(), responseType: new(empty.Empty).ProtoReflect()},
+	0: {requestType: new(CommitArgs).ProtoReflect(), responseType: new(empty.Empty).ProtoReflect()},
 }

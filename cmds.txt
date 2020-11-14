@@ -25,11 +25,14 @@ protoc `
 --gorums_out=paths=source_relative:.\client `
 client.proto
 
-## pbft.proto的安装
+## pbftlinear.proto的安装
 protoc `
 --proto_path=F:\ws\go\pkg\mod\github.com\gogo\protobuf@v1.2.1\protobuf `
 --proto_path=F:\ws\go\pkg\mod\github.com\relab\gorums@v0.2.1 `
 --proto_path=.\internal\proto  `
 --go_out=paths=source_relative:.\internal\proto `
+--go-grpc_out=paths=source_relative:.\internal\proto `
 --gorums_out=paths=source_relative:.\internal\proto `
-pbft.proto
+pbftlinear.proto
+
+注意现在多了一个go-grpc_out

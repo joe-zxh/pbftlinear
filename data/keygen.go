@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-const privateKeyFileType = "PBFT PRIVATE KEY"
-const publicKeyFileType = "PBFT PUBLIC KEY"
+const privateKeyFileType = "PBFTLinear PRIVATE KEY"
+const publicKeyFileType = "PBFTLinear PUBLIC KEY"
 
 // GeneratePrivateKey returns a new public/private key pair based on ECDSA.
 func GeneratePrivateKey() (pk *ecdsa.PrivateKey, err error) {
@@ -37,7 +37,7 @@ func GenerateTLSCert(hosts []string, privateKey *ecdsa.PrivateKey) (cert []byte,
 	caTmpl := &x509.Certificate{
 		SerialNumber: sn,
 		Subject: pkix.Name{
-			CommonName: "PBFT Self-Signed Certificate",
+			CommonName: "PBFTLinear Self-Signed Certificate",
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(10, 0, 0),

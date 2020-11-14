@@ -18,9 +18,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joe-zxh/pbft/client"
-	"github.com/joe-zxh/pbft/config"
-	"github.com/joe-zxh/pbft/data"
+	"github.com/joe-zxh/pbftlinear/client"
+	"github.com/joe-zxh/pbftlinear/config"
+	"github.com/joe-zxh/pbftlinear/data"
 	"github.com/relab/gorums/benchmark"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -51,7 +51,7 @@ type options struct {
 func usage() {
 	fmt.Printf("Usage: %s [options]\n", os.Args[0])
 	fmt.Println()
-	fmt.Println("Loads configuration from ./pbft.toml")
+	fmt.Println("Loads configuration from ./pbftlinear.toml")
 	fmt.Println()
 	fmt.Println("Options:")
 	pflag.PrintDefaults()
@@ -96,7 +96,7 @@ func main() {
 	viper.BindPFlags(pflag.CommandLine)
 
 	// read main config file in working dir
-	viper.SetConfigName("pbft")
+	viper.SetConfigName("pbftlinear")
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
 	if err != nil {

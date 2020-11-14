@@ -2,7 +2,7 @@
 package proto
 
 import (
-	"github.com/joe-zxh/pbft/data"
+	"github.com/joe-zxh/pbftlinear/data"
 )
 
 func PP2Proto(dpp *data.PrePrepareArgs) *PrePrepareArgs {

@@ -6,9 +6,9 @@ import "gorums.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/duration.proto";
 
-option go_package = "github.com/joe-zxh/pbft/client";
+option go_package = "github.com/joe-zxh/pbftlinear/client";
 
-// Client is the client-facing API to PBFT
+// Client is the client-facing API to PBFTLinear
 service Client {
   // ExecCommand sends a command to all replicas and waits for valid signatures
   // from f+1 replicas
@@ -19,7 +19,7 @@ service Client {
   }
 }
 
-// Command is the request that is sent to the PBFT replicas with the data to
+// Command is the request that is sent to the PBFTLinear replicas with the data to
 // be executed.
 message Command {
   uint32 ClientID = 1;

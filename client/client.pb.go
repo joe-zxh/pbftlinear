@@ -28,7 +28,7 @@ const (
 // of the legacy proto package is being used.
 const _ = proto.ProtoPackageIsVersion4
 
-// Command is the request that is sent to the PBFT replicas with the data to
+// Command is the request that is sent to the PBFTLinear replicas with the data to
 // be executed.
 type Command struct {
 	state         protoimpl.MessageState

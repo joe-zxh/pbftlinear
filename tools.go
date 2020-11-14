@@ -1,6 +1,6 @@
 // +build tools
 
-package pbft
+package pbftlinear
 
 import (
 	_ "github.com/relab/gorums"

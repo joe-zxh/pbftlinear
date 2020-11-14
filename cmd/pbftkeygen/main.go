@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/joe-zxh/pbft/data"
+	"github.com/joe-zxh/pbftlinear/data"
 	"github.com/spf13/pflag"
 )
 

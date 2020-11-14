@@ -1,12 +1,12 @@
-# pbft
+# pbftlinear
 
-`pbft` is an implementation of the PBFT protocol [1]. It uses the Gorums [2] RPC framework for sending messages between replicas.
+`pbftlinear` is an implementation of the PBFTLinear protocol [1]. It uses the Gorums [2] RPC framework for sending messages between replicas.
 
 ## Running the examples
 
 We have written an example client located in `cmd/pbftclient` and an example server located in `cmd/pbftserver`.
 These can be compiled by running `make`.
-They read a configuration file named `pbft.toml` from the working directory.
+They read a configuration file named `pbftlinear.toml` from the working directory.
 An example configuration that runs on localhost is included in the root of the project.
 To generate public and private keys for the servers, run `cmd/hotstuffkeygen/hotstuffkeygen -p 'r*' -n 4 --hosts 127.0.0.1 --tls keys`.
 To start four servers, run `scripts/run_servers.sh` with any desired options.

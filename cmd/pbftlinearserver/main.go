@@ -22,10 +22,10 @@ import (
 	"time"
 
 	"github.com/felixge/fgprof"
-	"github.com/joe-zxh/pbft"
-	"github.com/joe-zxh/pbft/client"
-	"github.com/joe-zxh/pbft/config"
-	"github.com/joe-zxh/pbft/data"
+	"github.com/joe-zxh/pbftlinear"
+	"github.com/joe-zxh/pbftlinear/client"
+	"github.com/joe-zxh/pbftlinear/config"
+	"github.com/joe-zxh/pbftlinear/data"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -144,7 +144,7 @@ func main() {
 	viper.BindPFlags(pflag.CommandLine)
 
 	// read main config file in working dir
-	viper.SetConfigName("pbft")
+	viper.SetConfigName("pbftlinear")
 	viper.AddConfigPath(".")
 	err := viper.ReadInConfig()
 	if err != nil {
@@ -258,7 +258,7 @@ func main() {
 	replicaConfig.ClusterSize = len(replicaConfig.Replicas)
 	replicaConfig.QuorumSize = len(replicaConfig.Replicas) - (len(replicaConfig.Replicas)-1)/3
 
-	srv := newPBFTServer(&conf, replicaConfig)
+	srv := newPBFTLinearServer(&conf, replicaConfig)
 	err = srv.Start(clientAddress)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to start: %v\n", err)
@@ -289,12 +289,12 @@ type cmdID struct {
 }
 
 // 这个server是面向 客户端的。
-type pbftServer struct {
-	ctx       context.Context
-	cancel    context.CancelFunc
-	conf      *options
-	gorumsSrv *client.GorumsServer
-	pbft      *pbft.PBFT
+type pbftLinearServer struct {
+	ctx        context.Context
+	cancel     context.CancelFunc
+	conf       *options
+	gorumsSrv  *client.GorumsServer
+	pbftlinear *pbftlinear.PBFTLinear
 
 	mut          sync.Mutex
 	finishedCmds map[cmdID]chan struct{}
@@ -303,7 +303,7 @@ type pbftServer struct {
 	pldatas      map[int32]([]byte)
 }
 
-func newPBFTServer(conf *options, replicaConfig *config.ReplicaConfig) *pbftServer {
+func newPBFTLinearServer(conf *options, replicaConfig *config.ReplicaConfig) *pbftLinearServer {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	serverOpts := []client.ServerOption{}
@@ -315,7 +315,7 @@ func newPBFTServer(conf *options, replicaConfig *config.ReplicaConfig) *pbftServ
 
 	serverOpts = append(serverOpts, client.WithGRPCServerOptions(grpcServerOpts...))
 
-	srv := &pbftServer{
+	srv := &pbftLinearServer{
 		ctx:          ctx,
 		cancel:       cancel,
 		conf:         conf,
@@ -325,12 +325,12 @@ func newPBFTServer(conf *options, replicaConfig *config.ReplicaConfig) *pbftServ
 		pldatas:      make(map[int32]([]byte)),
 	}
 	srv.initPayloadData()
-	srv.pbft = pbft.New(replicaConfig, conf.TLS, time.Minute, time.Duration(conf.ViewTimeout)*time.Millisecond)
+	srv.pbftlinear = pbftlinear.New(replicaConfig, conf.TLS, time.Minute, time.Duration(conf.ViewTimeout)*time.Millisecond)
 	srv.gorumsSrv.RegisterClientServer(srv)
 	return srv
 }
 
-func (srv *pbftServer) initPayloadData() { // 初始化一些常用的负载的大小
+func (srv *pbftLinearServer) initPayloadData() { // 初始化一些常用的负载的大小
 	srv.pldatas[0] = []byte(``)
 
 	var endSize int32 = 4096
@@ -347,7 +347,7 @@ func (srv *pbftServer) initPayloadData() { // 初始化一些常用的负载的�
 	}
 }
 
-func (srv *pbftServer) getPayloadData(size int32) []byte {
+func (srv *pbftLinearServer) getPayloadData(size int32) []byte {
 	if data, ok := srv.pldatas[size]; ok {
 		return data
 	}
@@ -360,13 +360,13 @@ func (srv *pbftServer) getPayloadData(size int32) []byte {
 	return srv.pldatas[size]
 }
 
-func (srv *pbftServer) Start(address string) error {
+func (srv *pbftLinearServer) Start(address string) error {
 	lis, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
 	}
 
-	err = srv.pbft.Start() // 这里是hs的入口
+	err = srv.pbftlinear.Start() // 这里是hs的入口
 	if err != nil {
 		return err
 	}
@@ -377,20 +377,20 @@ func (srv *pbftServer) Start(address string) error {
 	return nil
 }
 
-func (srv *pbftServer) Stop() {
+func (srv *pbftLinearServer) Stop() {
 	srv.gorumsSrv.Stop()
 	srv.cancel()
-	srv.pbft.Close()
+	srv.pbftlinear.Close()
 }
 
-func (srv *pbftServer) ExecCommand(_ context.Context, cmd *client.Command, out func(*client.Empty, error)) {
+func (srv *pbftLinearServer) ExecCommand(_ context.Context, cmd *client.Command, out func(*client.Empty, error)) {
 	finished := make(chan struct{})
 	id := cmdID{cmd.ClientID, cmd.SequenceNumber}
 	srv.mut.Lock()
 	srv.finishedCmds[id] = finished
 	srv.mut.Unlock()
 
-	if srv.pbft.IsLeader {
+	if srv.pbftlinear.IsLeader {
 		cmd.Data = srv.getPayloadData(cmd.PayloadSize)
 
 		b, err := proto.MarshalOptions{Deterministic: true}.Marshal(cmd)
@@ -398,8 +398,8 @@ func (srv *pbftServer) ExecCommand(_ context.Context, cmd *client.Command, out f
 			log.Fatalf("Failed to marshal command: %v", err)
 			out(nil, status.Errorf(codes.InvalidArgument, "Failed to marshal command: %v", err))
 		}
-		srv.pbft.AddCommand(data.Command(b))
-		srv.pbft.Propose(false)
+		srv.pbftlinear.AddCommand(data.Command(b))
+		srv.pbftlinear.Propose(false)
 	}
 
 	go func(id cmdID, finished chan struct{}) {
@@ -414,8 +414,8 @@ func (srv *pbftServer) ExecCommand(_ context.Context, cmd *client.Command, out f
 	}(id, finished)
 }
 
-func (srv *pbftServer) onExec() {
-	for cmds := range srv.pbft.GetExec() {
+func (srv *pbftLinearServer) onExec() {
+	for cmds := range srv.pbftlinear.GetExec() {
 		if len(cmds) > 0 && srv.conf.PrintThroughput {
 			now := time.Now().UnixNano()
 			prev := atomic.SwapInt64(&srv.lastExecTime, now)

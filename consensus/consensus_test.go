@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/joe-zxh/pbft/config"
-	. "github.com/joe-zxh/pbft/data"
+	. "github.com/joe-zxh/pbftlinear/config"
+	. "github.com/joe-zxh/pbftlinear/data"
 )
 
 /* func TestSafeNode(t *testing.T) {

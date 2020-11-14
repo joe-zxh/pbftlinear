@@ -1,4 +1,4 @@
-module github.com/joe-zxh/pbft
+module github.com/joe-zxh/pbftlinear
 
 go 1.13
 
