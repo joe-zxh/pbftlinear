@@ -84,7 +84,7 @@ func (s *SignatureCache) VerifyQuorumCert(qc *QuorumCert) bool {
 	}
 	//****
 	for _, psig := range qc.Sigs { // 因为需要深度拷贝，所以用range的方式来做，只检查第一个即可。
-		return s.VerifySignature(psig, qc.EntryHash)
+		return s.VerifySignature(psig, qc.SigContent)
 	}
 	return true
 	//****
@@ -134,13 +134,13 @@ func (psig PartialSig) ToBytes() []byte {
 
 // QuorumCert is a certificate for a block from a quorum of replicas.
 type QuorumCert struct {
-	Sigs      map[config.ReplicaID]PartialSig
-	EntryHash EntryHash
+	Sigs       map[config.ReplicaID]PartialSig
+	SigContent EntryHash // 签名内容是一个512字节的hash
 }
 
 func (qc *QuorumCert) ToBytes() []byte {
 	b := make([]byte, 0, 32)
-	b = append(b, qc.EntryHash[:]...)
+	b = append(b, qc.SigContent[:]...)
 	psigs := make([]PartialSig, 0, len(qc.Sigs))
 	for _, v := range qc.Sigs {
 		i := sort.Search(len(psigs), func(j int) bool {
@@ -157,7 +157,7 @@ func (qc *QuorumCert) ToBytes() []byte {
 }
 
 func (qc *QuorumCert) String() string {
-	return fmt.Sprintf("QuorumCert{Sigs: %d, Hash: %.8s}", len(qc.Sigs), qc.EntryHash)
+	return fmt.Sprintf("QuorumCert{Sigs: %d, Hash: %.8s}", len(qc.Sigs), qc.SigContent)
 }
 
 // AddPartial adds the partial signature to the quorum cert.

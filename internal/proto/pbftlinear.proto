@@ -30,8 +30,7 @@ message PrePrepareReply {
 message PrepareArgs {
   uint32 View = 1;
   uint32 Seq = 2;
-  bytes Digest = 3;
-  QuorumCert QC = 4;
+  QuorumCert QC = 3;
 }
 
 message PrepareReply {
@@ -41,8 +40,7 @@ message PrepareReply {
 message CommitArgs {
   uint32 View = 1;
   uint32 Seq = 2;
-  bytes Digest = 3;
-  QuorumCert QC = 4;
+  QuorumCert QC = 3;
 }
 
 message Command {bytes Data = 1;}
@@ -56,4 +54,5 @@ message PartialSig {
 
 message QuorumCert {
   repeated PartialSig Sigs = 1;
+  bytes SigContent = 2;
 }

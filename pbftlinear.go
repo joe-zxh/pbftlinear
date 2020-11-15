@@ -147,42 +147,99 @@ type pbftLinearServer struct {
 }
 
 func (pbftlinear *PBFTLinear) Propose(timeout bool) {
-	pp := pbftlinear.CreateProposal(timeout)
-	if pp == nil {
+	dPp := pbftlinear.CreateProposal(timeout)
+	if dPp == nil {
 		return
 	}
-	logger.Printf("[B/PrePrepare]: view: %d, seq: %d, (%d commands)\n", pp.View, pp.Seq, len(pp.Commands))
-	protobuf := proto.PP2Proto(pp)
+	pbftlinear.BroadcastPrePrepareRequest(dPp)
+}
 
+func (pbftlinear *PBFTLinear) BroadcastPrePrepareRequest(dPp *data.PrePrepareArgs) {
+	logger.Printf("[B/PrePrepare]: view: %d, seq: %d, (%d commands)\n", dPp.View, dPp.Seq, len(dPp.Commands))
+
+	protobuf := proto.PP2Proto(dPp)
+
+	// 1. leader处理自己的ppRequest，包括新建entry(handlePrePrepare)、设置prepare签名
+	pPPReply, err := pbftlinear.handlePrePrepare(dPp)
+	if err != nil {
+		panic(err)
+	}
+	pbftlinear.Mut.Lock()
+	ent := pbftlinear.GetEntry(data.EntryID{dPp.Seq, dPp.View})
+	pbftlinear.Mut.Unlock()
+
+	ent.Mut.Lock()
+	if ent.PreparedCert != nil {
+		panic(`leader: ent.PreparedCert != nil`)
+	}
+	ent.PreparedCert = &data.QuorumCert{
+		Sigs:       make(map[config.ReplicaID]data.PartialSig),
+		SigContent: *ent.PrepareHash,
+	}
+	ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *pPPReply.Sig.Proto2PartialSig()
+	ent.Mut.Unlock()
+
+	// 2. leader处理其他人的ppRequest的返回
 	for rid, client := range pbftlinear.nodes {
-		if rid != pbftlinear.Config.ID {
-			(*client).PrePrepare(context.TODO(), protobuf)
-		}
+
+		go func(id config.ReplicaID) {
+			if rid != pbftlinear.Config.ID {
+				pPpr, err := (*client).PrePrepare(context.TODO(), protobuf)
+				if err != nil {
+					fmt.Print("Call PrePrepare RPC returns error: %v\n", err)
+				}
+				dPs := pPpr.Sig.Proto2PartialSig()
+				ent.Mut.Lock()
+				if ent.Prepared == false &&
+					pbftlinear.SigCache.VerifySignature(*dPs, *ent.PrepareHash) {
+					ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *dPs
+					if len(ent.PreparedCert.Sigs) > int(2*pbftlinear.F) {
+						// 收拾收拾，准备broadcast prepare
+						dP := &proto.PrepareArgs{
+							View: ent.PP.View,
+							Seq:  ent.PP.Seq,
+							QC:   proto.QuorumCertToProto(ent.PreparedCert),
+						}
+						ent.Mut.Unlock()
+						pbftlinear.BroadcastPrepareRequest(dP)
+					} else {
+						ent.Mut.Unlock()
+					}
+				} else {
+					ent.Mut.Unlock()
+				}
+			}
+		}(rid)
 	}
 }
 
-func (pbftlinear *PBFTLinear) handlePrePrepare(pp *data.PrePrepareArgs) (*proto.PrePrepareReply, error) {
+func (pbftlinear *PBFTLinear) BroadcastPrepareRequest(dPp *proto.PrepareArgs) {
+
+}
+
+func (pbftlinear *PBFTLinear) handlePrePrepare(dPp *data.PrePrepareArgs) (*proto.PrePrepareReply, error) {
 
 	pbftlinear.PBFTLinearCore.Mut.Lock()
 
-	if !pbftlinear.Changing && pbftlinear.View == pp.View {
+	if !pbftlinear.Changing && pbftlinear.View == dPp.View {
 
-		ent := pbftlinear.GetEntry(data.EntryID{V: pp.View, N: pp.Seq})
+		ent := pbftlinear.GetEntry(data.EntryID{V: dPp.View, N: dPp.Seq})
 		pbftlinear.PBFTLinearCore.Mut.Unlock()
 
 		ent.Mut.Lock()
 		if ent.Digest == nil {
-			ent.PP = pp
-			ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.Hash().ToSlice())
+			ent.PP = dPp
+			ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.GetPrepareHash().ToSlice())
 			if err != nil {
 				fmt.Println(err)
 				return nil, err
 			}
+			ent.Mut.Unlock()
 
 			ppReply := &proto.PrePrepareReply{
-				Sig: ps.tofawefawefawf,
+				Sig: proto.PartialSig2Proto(ps),
 			}
-			ent.Mut.Unlock()
+			return ppReply, nil
 		} else {
 			ent.Mut.Unlock()
 			fmt.Println(`多个具有相同seq的preprepare`)
@@ -191,11 +248,12 @@ func (pbftlinear *PBFTLinear) handlePrePrepare(pp *data.PrePrepareArgs) (*proto.
 
 	} else {
 		pbftlinear.PBFTLinearCore.Mut.Unlock()
+		return nil, errors.New(`正在view change 或者 view不匹配`)
 	}
 }
 
-func (pbftlinear *PBFTLinear) PrePrepare(context.Context, *proto.PrePrepareArgs) (*proto.PrePrepareReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method PrePrepare not implemented")
+func (pbftlinear *PBFTLinear) PrePrepare(_ context.Context, dPp *proto.PrePrepareArgs) (*proto.PrePrepareReply, error) {
+	return pbftlinear.handlePrePrepare(dPp.Proto2PP())
 }
 
 func (pbftlinear *PBFTLinear) Prepare(context.Context, *proto.PrepareArgs) (*proto.PrepareReply, error) {

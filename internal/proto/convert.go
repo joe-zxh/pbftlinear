@@ -2,7 +2,9 @@
 package proto
 
 import (
+	"github.com/joe-zxh/pbftlinear/config"
 	"github.com/joe-zxh/pbftlinear/data"
+	"math/big"
 )
 
 func PP2Proto(dpp *data.PrePrepareArgs) *PrePrepareArgs {
@@ -70,4 +72,46 @@ func CommandToProto(cmd data.Command) *Command {
 
 func (cmd *Command) Proto2Command() data.Command {
 	return data.Command(cmd.GetData())
+}
+
+func PartialSig2Proto(dPs *data.PartialSig) *PartialSig {
+	return &PartialSig{
+		ReplicaID: int32(dPs.ID),
+		R:         dPs.R.Bytes(),
+		S:         dPs.S.Bytes(),
+	}
+}
+
+func (pPs *PartialSig) Proto2PartialSig() *data.PartialSig {
+	r := big.NewInt(0)
+	s := big.NewInt(0)
+	r.SetBytes(pPs.GetR())
+	s.SetBytes(pPs.GetS())
+	return &data.PartialSig{
+		ID: config.ReplicaID(pPs.GetReplicaID()),
+		R:  r,
+		S:  s,
+	}
+}
+
+func QuorumCertToProto(qc *data.QuorumCert) *QuorumCert {
+	sigs := make([]*PartialSig, 0, len(qc.Sigs))
+	for _, psig := range qc.Sigs {
+		sigs = append(sigs, PartialSig2Proto(&psig))
+	}
+	return &QuorumCert{
+		Sigs: sigs,
+	}
+}
+
+func (pqc *QuorumCert) Proto2QuorumCert() *data.QuorumCert {
+	qc := &data.QuorumCert{
+		Sigs: make(map[config.ReplicaID]data.PartialSig),
+	}
+	copy(qc.SigContent[:], pqc.SigContent)
+	for _, ppsig := range pqc.GetSigs() {
+		psig := ppsig.Proto2PartialSig()
+		qc.Sigs[psig.ID] = *psig
+	}
+	return qc
 }

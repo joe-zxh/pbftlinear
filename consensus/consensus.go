@@ -48,9 +48,9 @@ type PBFTLinearCore struct {
 	cps        map[int]*CheckPoint
 	WaterLow   uint32
 	WaterHigh  uint32
-	f          uint32
-	q          uint32
-	n          uint32
+	F          uint32
+	Q          uint32
+	N          uint32
 	monitor    bool
 	Change     *time.Timer
 	Changing   bool                // Indicate if this node is changing view
@@ -116,8 +116,8 @@ func New(conf *config.ReplicaConfig) *PBFTLinearCore {
 		cps:        make(map[int]*CheckPoint),
 		WaterLow:   0,
 		WaterHigh:  2 * checkpointDiv,
-		f:          uint32(len(conf.Replicas)-1) / 3,
-		n:          uint32(len(conf.Replicas)),
+		F:          uint32(len(conf.Replicas)-1) / 3,
+		N:          uint32(len(conf.Replicas)),
 		monitor:    false,
 		Change:     nil,
 		Changing:   false,
@@ -126,8 +126,8 @@ func New(conf *config.ReplicaConfig) *PBFTLinearCore {
 		vcs:        make(map[uint32][]*ViewChangeArgs),
 		lastcp:     0,
 	}
-	pbftlinear.q = pbftlinear.f*2 + 1
-	pbftlinear.Leader = (pbftlinear.View-1)%pbftlinear.n + 1
+	pbftlinear.Q = pbftlinear.F*2 + 1
+	pbftlinear.Leader = (pbftlinear.View-1)%pbftlinear.N + 1
 	pbftlinear.IsLeader = (pbftlinear.Leader == pbftlinear.ID)
 
 	// Put an initial stable checkpoint
@@ -169,7 +169,7 @@ func (pbftlinear *PBFTLinearCore) GetEntry(id data.EntryID) *data.Entry {
 // Lock ent.lock before call this function
 // Locks : acquire s.lock before call this function
 func (pbftlinear *PBFTLinearCore) Prepared(ent *data.Entry) bool {
-	if len(ent.P) > int(2*pbftlinear.f) {
+	if len(ent.P) > int(2*pbftlinear.F) {
 		// Key is the id of sender replica
 		validSet := make(map[uint32]bool)
 		for i, sz := 0, len(ent.P); i < sz; i++ {
@@ -177,14 +177,14 @@ func (pbftlinear *PBFTLinearCore) Prepared(ent *data.Entry) bool {
 				validSet[ent.P[i].Sender] = true
 			}
 		}
-		return len(validSet) > int(2*pbftlinear.f)
+		return len(validSet) > int(2*pbftlinear.F)
 	}
 	return false
 }
 
 // Locks : acquire s.lock before call this function
 func (pbftlinear *PBFTLinearCore) Committed(ent *data.Entry) bool {
-	if len(ent.C) > int(2*pbftlinear.f) {
+	if len(ent.C) > int(2*pbftlinear.F) {
 		// Key is replica id
 		validSet := make(map[uint32]bool)
 		for i, sz := 0, len(ent.C); i < sz; i++ {
@@ -192,7 +192,7 @@ func (pbftlinear *PBFTLinearCore) Committed(ent *data.Entry) bool {
 				validSet[ent.C[i].Sender] = true
 			}
 		}
-		return len(validSet) > int(2*pbftlinear.f)
+		return len(validSet) > int(2*pbftlinear.F)
 	}
 	return false
 }
