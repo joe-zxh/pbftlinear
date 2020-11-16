@@ -32,40 +32,6 @@ func (pp *PrePrepareArgs) Proto2PP() *data.PrePrepareArgs {
 	return dpp
 }
 
-func P2Proto(dp *data.PrepareArgs) *PrepareArgs {
-	return &PrepareArgs{
-		View:   dp.View,
-		Seq:    dp.Seq,
-		Digest: dp.Digest.ToSlice(),
-	}
-}
-
-func (p *PrepareArgs) Proto2P() *data.PrepareArgs {
-	dpp := &data.PrepareArgs{
-		View: p.View,
-		Seq:  p.Seq,
-	}
-	copy(dpp.Digest[:], p.Digest[:len(dpp.Digest)])
-	return dpp
-}
-
-func C2Proto(dc *data.CommitArgs) *CommitArgs {
-	return &CommitArgs{
-		View:   dc.View,
-		Seq:    dc.Seq,
-		Digest: dc.Digest.ToSlice(),
-	}
-}
-
-func (c *CommitArgs) Proto2C() *data.CommitArgs {
-	dc := &data.CommitArgs{
-		View: c.View,
-		Seq:  c.Seq,
-	}
-	copy(dc.Digest[:], c.Digest[:len(dc.Digest)])
-	return dc
-}
-
 func CommandToProto(cmd data.Command) *Command {
 	return &Command{Data: []byte(cmd)}
 }
@@ -101,6 +67,7 @@ func QuorumCertToProto(qc *data.QuorumCert) *QuorumCert {
 	}
 	return &QuorumCert{
 		Sigs: sigs,
+		SigContent: qc.SigContent[:],
 	}
 }
 

@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-const privateKeyFileType = "PBFTLinear PRIVATE KEY"
-const publicKeyFileType = "PBFTLinear PUBLIC KEY"
+const privateKeyFileType = "PBFTLINEAR PRIVATE KEY"
+const publicKeyFileType = "PBFTLINEAR PUBLIC KEY"
 
 // GeneratePrivateKey returns a new public/private key pair based on ECDSA.
 func GeneratePrivateKey() (pk *ecdsa.PrivateKey, err error) {

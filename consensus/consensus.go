@@ -1,7 +1,6 @@
 package consensus
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"go.uber.org/atomic"
@@ -164,35 +163,4 @@ func (pbftlinear *PBFTLinearCore) GetEntry(id data.EntryID) *data.Entry {
 		pbftlinear.Log[id] = &data.Entry{}
 	}
 	return pbftlinear.Log[id]
-}
-
-// Lock ent.lock before call this function
-// Locks : acquire s.lock before call this function
-func (pbftlinear *PBFTLinearCore) Prepared(ent *data.Entry) bool {
-	if len(ent.P) > int(2*pbftlinear.F) {
-		// Key is the id of sender replica
-		validSet := make(map[uint32]bool)
-		for i, sz := 0, len(ent.P); i < sz; i++ {
-			if ent.P[i].View == ent.PP.View && ent.P[i].Seq == ent.PP.Seq && bytes.Equal(ent.P[i].Digest[:], ent.Digest[:]) {
-				validSet[ent.P[i].Sender] = true
-			}
-		}
-		return len(validSet) > int(2*pbftlinear.F)
-	}
-	return false
-}
-
-// Locks : acquire s.lock before call this function
-func (pbftlinear *PBFTLinearCore) Committed(ent *data.Entry) bool {
-	if len(ent.C) > int(2*pbftlinear.F) {
-		// Key is replica id
-		validSet := make(map[uint32]bool)
-		for i, sz := 0, len(ent.C); i < sz; i++ {
-			if ent.C[i].View == ent.PP.View && ent.C[i].Seq == ent.PP.Seq && bytes.Equal(ent.C[i].Digest[:], ent.Digest[:]) {
-				validSet[ent.C[i].Sender] = true
-			}
-		}
-		return len(validSet) > int(2*pbftlinear.F)
-	}
-	return false
 }

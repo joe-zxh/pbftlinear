@@ -10,8 +10,7 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/joe-zxh/pbftlinear/data"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
+	"github.com/joe-zxh/pbftlinear/util"
 	"log"
 	"math/big"
 	"net"
@@ -147,93 +146,184 @@ type pbftLinearServer struct {
 }
 
 func (pbftlinear *PBFTLinear) Propose(timeout bool) {
-	dPp := pbftlinear.CreateProposal(timeout)
-	if dPp == nil {
+	dPP := pbftlinear.CreateProposal(timeout)
+	if dPP == nil {
 		return
 	}
-	pbftlinear.BroadcastPrePrepareRequest(dPp)
-}
 
-func (pbftlinear *PBFTLinear) BroadcastPrePrepareRequest(dPp *data.PrePrepareArgs) {
-	logger.Printf("[B/PrePrepare]: view: %d, seq: %d, (%d commands)\n", dPp.View, dPp.Seq, len(dPp.Commands))
-
-	protobuf := proto.PP2Proto(dPp)
-
-	// 1. leader处理自己的ppRequest，包括新建entry(handlePrePrepare)、设置prepare签名
-	pPPReply, err := pbftlinear.handlePrePrepare(dPp)
-	if err != nil {
-		panic(err)
-	}
+	// leader先处理自己的entry的pp 以及 prepare的签名
 	pbftlinear.Mut.Lock()
-	ent := pbftlinear.GetEntry(data.EntryID{dPp.Seq, dPp.View})
+	ent := pbftlinear.GetEntry(data.EntryID{V: dPP.View, N: dPP.Seq})
 	pbftlinear.Mut.Unlock()
 
 	ent.Mut.Lock()
+	if ent.PP != nil {
+		panic(`leader: ent.PP != nil`)
+	}
+	ent.PP = dPP
+	ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.GetPrepareHash().ToSlice())
+	if err != nil {
+		fmt.Printf("Propose: CreatePartialSig: error: %v\n", err)
+	}
+
 	if ent.PreparedCert != nil {
 		panic(`leader: ent.PreparedCert != nil`)
 	}
 	ent.PreparedCert = &data.QuorumCert{
 		Sigs:       make(map[config.ReplicaID]data.PartialSig),
-		SigContent: *ent.PrepareHash,
+		SigContent: ent.GetPrepareHash(),
 	}
-	ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *pPPReply.Sig.Proto2PartialSig()
+	ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *ps
 	ent.Mut.Unlock()
+	pPP := proto.PP2Proto(dPP)
 
-	// 2. leader处理其他人的ppRequest的返回
+	pbftlinear.BroadcastPrePrepareRequest(pPP, ent)
+}
+
+func (pbftlinear *PBFTLinear) BroadcastPrePrepareRequest(pPP *proto.PrePrepareArgs, ent *data.Entry) {
+	logger.Printf("[B/PrePrepare]: view: %d, seq: %d, (%d commands)\n", pPP.View, pPP.Seq, len(pPP.Commands))
+
 	for rid, client := range pbftlinear.nodes {
-
-		go func(id config.ReplicaID) {
-			if rid != pbftlinear.Config.ID {
-				pPpr, err := (*client).PrePrepare(context.TODO(), protobuf)
+		if rid != pbftlinear.Config.ID {
+			go func(id config.ReplicaID, cli *proto.PBFTLinearClient) {
+				pPPR, err := (*cli).PrePrepare(context.TODO(), pPP)
 				if err != nil {
-					fmt.Print("Call PrePrepare RPC returns error: %v\n", err)
+					panic(err)
 				}
-				dPs := pPpr.Sig.Proto2PartialSig()
+				dPS := pPPR.Sig.Proto2PartialSig()
 				ent.Mut.Lock()
 				if ent.Prepared == false &&
-					pbftlinear.SigCache.VerifySignature(*dPs, *ent.PrepareHash) {
-					ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *dPs
+					pbftlinear.SigCache.VerifySignature(*dPS, ent.GetPrepareHash()) {
+					ent.PreparedCert.Sigs[id] = *dPS
 					if len(ent.PreparedCert.Sigs) > int(2*pbftlinear.F) {
+
+						// leader先处理自己的entry的commit的签名
+						ent.Prepared = true
+						ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.GetCommitHash().ToSlice())
+						if err != nil {
+							fmt.Printf("BroadcastPrePrepareRequest: CreatePartialSig: error: %v\n", err)
+							return
+						}
+						if ent.CommittedCert != nil {
+							panic(`leader: ent.CommittedCert != nil`)
+						}
+
+						ent.CommittedCert = &data.QuorumCert{
+							Sigs:       make(map[config.ReplicaID]data.PartialSig),
+							SigContent: ent.GetCommitHash(),
+						}
+						ent.CommittedCert.Sigs[pbftlinear.Config.ID] = *ps
+
 						// 收拾收拾，准备broadcast prepare
-						dP := &proto.PrepareArgs{
+						pP := &proto.PrepareArgs{
 							View: ent.PP.View,
 							Seq:  ent.PP.Seq,
 							QC:   proto.QuorumCertToProto(ent.PreparedCert),
 						}
 						ent.Mut.Unlock()
-						pbftlinear.BroadcastPrepareRequest(dP)
+						pbftlinear.BroadcastPrepareRequest(pP, ent)
 					} else {
 						ent.Mut.Unlock()
 					}
 				} else {
 					ent.Mut.Unlock()
 				}
-			}
-		}(rid)
+			}(rid, client)
+		}
 	}
 }
 
-func (pbftlinear *PBFTLinear) BroadcastPrepareRequest(dPp *proto.PrepareArgs) {
+func (pbftlinear *PBFTLinear) BroadcastPrepareRequest(pP *proto.PrepareArgs, ent *data.Entry) {
+	logger.Printf("[B/Prepare]: view: %d, seq: %d\n", pP.View, pP.Seq)
 
+	for rid, client := range pbftlinear.nodes {
+
+		if rid != pbftlinear.Config.ID {
+			go func(id config.ReplicaID, cli *proto.PBFTLinearClient) {
+				pPR, err := (*cli).Prepare(context.TODO(), pP)
+				if err != nil {
+					panic(err)
+				}
+				dPS := pPR.Sig.Proto2PartialSig()
+				ent.Mut.Lock()
+				if ent.Committed == false &&
+					pbftlinear.SigCache.VerifySignature(*dPS, ent.GetCommitHash()) {
+					ent.CommittedCert.Sigs[id] = *dPS
+					if len(ent.CommittedCert.Sigs) > int(2*pbftlinear.F) {
+
+						ent.Committed = true
+
+						// 收拾收拾，准备broadcast commit
+						pC := &proto.CommitArgs{
+							View: ent.PP.View,
+							Seq:  ent.PP.Seq,
+							QC:   proto.QuorumCertToProto(ent.CommittedCert),
+						}
+						pbftlinear.BroadcastCommitRequest(pC)
+
+						// 对于leader来说，pp一定存在的，所以不需要先判断是否为nil
+						elem := &util.PQElem{
+							Pri: int(ent.PP.Seq),
+							C:   ent.PP.Commands,
+						}
+						ent.Mut.Unlock()
+						go pbftlinear.ApplyCommands(elem)
+
+					} else {
+						ent.Mut.Unlock()
+					}
+				} else {
+					ent.Mut.Unlock()
+				}
+
+			}(rid, client)
+		}
+	}
 }
 
-func (pbftlinear *PBFTLinear) handlePrePrepare(dPp *data.PrePrepareArgs) (*proto.PrePrepareReply, error) {
+func (pbftlinear *PBFTLinear) BroadcastCommitRequest(pC *proto.CommitArgs) {
+	logger.Printf("[B/Commit]: view: %d, seq: %d\n", pC.View, pC.Seq)
 
-	pbftlinear.PBFTLinearCore.Mut.Lock()
+	for rid, client := range pbftlinear.nodes {
+		if rid != pbftlinear.Config.ID {
+			go func(id config.ReplicaID, cli *proto.PBFTLinearClient) {
+				_, err := (*cli).Commit(context.TODO(), pC)
+				if err != nil {
+					panic(err)
+				}
+			}(rid, client)
+		}
+	}
+}
 
-	if !pbftlinear.Changing && pbftlinear.View == dPp.View {
+func (pbftlinear *PBFTLinear) PrePrepare(_ context.Context, pPP *proto.PrePrepareArgs) (*proto.PrePrepareReply, error) {
 
-		ent := pbftlinear.GetEntry(data.EntryID{V: dPp.View, N: dPp.Seq})
-		pbftlinear.PBFTLinearCore.Mut.Unlock()
+	logger.Printf("PrePrepare: view:%d, seq:%d\n", pPP.View, pPP.Seq)
+
+	dPP := pPP.Proto2PP()
+
+	pbftlinear.Mut.Lock()
+
+	if !pbftlinear.Changing && pbftlinear.View == dPP.View {
+
+		ent := pbftlinear.GetEntry(data.EntryID{V: dPP.View, N: dPP.Seq})
+		pbftlinear.Mut.Unlock()
 
 		ent.Mut.Lock()
 		if ent.Digest == nil {
-			ent.PP = dPp
+			ent.PP = dPP
 			ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.GetPrepareHash().ToSlice())
 			if err != nil {
-				fmt.Println(err)
-				return nil, err
+				panic(err)
 			}
+			if ent.Committed { // 有可能已经commit了，但是PP还没收到
+				elem := &util.PQElem{
+					Pri: int(ent.PP.Seq),
+					C:   ent.PP.Commands,
+				}
+				go pbftlinear.ApplyCommands(elem)
+			}
+
 			ent.Mut.Unlock()
 
 			ppReply := &proto.PrePrepareReply{
@@ -247,21 +337,154 @@ func (pbftlinear *PBFTLinear) handlePrePrepare(dPp *data.PrePrepareArgs) (*proto
 		}
 
 	} else {
-		pbftlinear.PBFTLinearCore.Mut.Unlock()
+		pbftlinear.Mut.Unlock()
 		return nil, errors.New(`正在view change 或者 view不匹配`)
 	}
 }
 
-func (pbftlinear *PBFTLinear) PrePrepare(_ context.Context, dPp *proto.PrePrepareArgs) (*proto.PrePrepareReply, error) {
-	return pbftlinear.handlePrePrepare(dPp.Proto2PP())
+func (pbftlinear *PBFTLinear) Prepare(_ context.Context, pP *proto.PrepareArgs) (*proto.PrepareReply, error) {
+	logger.Printf("Receive Prepare: seq: %d, view: %d\n", pP.Seq, pP.View)
+
+	pbftlinear.Mut.Lock()
+	if !pbftlinear.Changing && pbftlinear.View == pP.View {
+		ent := pbftlinear.GetEntry(data.EntryID{pP.View, pP.Seq})
+		pbftlinear.Mut.Unlock()
+
+		ent.Mut.Lock()
+
+		if ent.Prepared == true {
+			panic(`already prepared...`)
+		}
+
+		// 检查qc
+		dQc := pP.QC.Proto2QuorumCert()
+		if !pbftlinear.SigCache.VerifyQuorumCert(dQc) {
+			logger.Println("Prepared QC not verified!: ", dQc)
+			return nil, errors.New(`Prepared QC not verified!`)
+		}
+
+		if ent.PreparedCert != nil {
+			panic(`follower: ent.PreparedCert != nil`)
+		}
+		ent.PreparedCert = &data.QuorumCert{
+			Sigs:       dQc.Sigs,
+			SigContent: dQc.SigContent,
+		}
+		ent.Prepared = true
+		ent.PrepareHash = &dQc.SigContent // 这里应该做检查的，如果先收到PP，PHash需要相等。PP那里，如果有PHash和CHash需要检查是否相等。这里简化了。
+
+		ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.GetCommitHash().ToSlice())
+		if err != nil {
+			panic(err)
+		}
+		ent.Mut.Unlock()
+
+		pPR := &proto.PrepareReply{Sig: proto.PartialSig2Proto(ps)}
+		return pPR, nil
+
+	} else {
+		pbftlinear.Mut.Unlock()
+	}
+	return nil, nil
 }
 
-func (pbftlinear *PBFTLinear) Prepare(context.Context, *proto.PrepareArgs) (*proto.PrepareReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Prepare not implemented")
+func (pbftlinear *PBFTLinear) Commit(_ context.Context, pC *proto.CommitArgs) (*empty.Empty, error) {
+	logger.Printf("Receive Commit: seq: %d, view: %d\n", pC.Seq, pC.View)
+	pbftlinear.Mut.Lock()
+	if !pbftlinear.Changing && pbftlinear.View == pC.View {
+		ent := pbftlinear.GetEntry(data.EntryID{pC.View, pC.Seq})
+		pbftlinear.Mut.Unlock()
+
+		ent.Mut.Lock()
+
+		if ent.Committed == true {
+			panic(`already committed...`)
+		}
+
+		// 检查qc
+		dQc := pC.QC.Proto2QuorumCert()
+		if !pbftlinear.SigCache.VerifyQuorumCert(dQc) {
+			logger.Println("Commit QC not verified!: ", dQc)
+			return &empty.Empty{}, errors.New(`Commit QC not verified!`)
+		}
+
+		if ent.CommittedCert != nil {
+			panic(`follower: ent.CommittedCert != nil`)
+		}
+		ent.CommittedCert = &data.QuorumCert{
+			Sigs:       dQc.Sigs,
+			SigContent: dQc.SigContent,
+		}
+		ent.Committed = true
+		ent.CommitHash = &dQc.SigContent // 这里应该做检查的，如果先收到P，CHash需要相等。PP那里，如果有PHash和CHash需要检查是否相等。这里简化了。
+
+		if ent.PP != nil {
+			elem := &util.PQElem{
+				Pri: int(ent.PP.Seq),
+				C:   ent.PP.Commands,
+			}
+			ent.Mut.Unlock()
+			go pbftlinear.ApplyCommands(elem)
+		}else{
+			ent.Mut.Unlock()
+		}
+
+		return &empty.Empty{}, nil
+	} else {
+		pbftlinear.Mut.Unlock()
+	}
+	return &empty.Empty{}, nil
 }
 
-func (pbftlinear *PBFTLinear) Commit(context.Context, *proto.CommitArgs) (*empty.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Commit not implemented")
+func (pbftlinear *PBFTLinear) ApplyCommands(elem *util.PQElem) {
+	pbftlinear.Mut.Lock()
+	inserted := pbftlinear.ApplyQueue.Insert(*elem)
+	if !inserted {
+		panic("Already insert some request with same sequence")
+	}
+
+	for i, sz := 0, pbftlinear.ApplyQueue.Length(); i < sz; i++ { // commit需要按global seq的顺序
+		m, err := pbftlinear.ApplyQueue.GetMin()
+		if err != nil {
+			break
+		}
+		if int(pbftlinear.Apply+1) == m.Pri {
+			pbftlinear.Apply++
+			cmds, ok := m.C.([]data.Command)
+			if ok {
+				pbftlinear.Exec <- cmds
+			}
+			pbftlinear.ApplyQueue.ExtractMin()
+
+		} else if int(pbftlinear.Apply+1) > m.Pri {
+			panic("This should already done")
+		} else {
+			break
+		}
+	}
+	pbftlinear.Mut.Unlock()
+}
+
+func (pbftlinear *PBFTLinear) ApplyCommands1() {
+	for i, sz := 0, pbftlinear.ApplyQueue.Length(); i < sz; i++ { // commit需要按global seq的顺序
+		m, err := pbftlinear.ApplyQueue.GetMin()
+		if err != nil {
+			break
+		}
+		if int(pbftlinear.Apply+1) == m.Pri {
+			pbftlinear.Apply++
+			cmds, ok := m.C.([]data.Command)
+			if ok {
+				pbftlinear.Exec <- cmds
+			}
+			pbftlinear.ApplyQueue.ExtractMin()
+
+		} else if int(pbftlinear.Apply+1) > m.Pri {
+			panic("This should already done")
+		} else {
+			break
+		}
+	}
 }
 
 func newPBFTLinearServer(pbftlinear *PBFTLinear) *pbftLinearServer {

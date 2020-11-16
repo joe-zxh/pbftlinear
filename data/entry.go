@@ -38,7 +38,7 @@ type Entry struct {
 
 	Digest      *EntryHash
 	PrepareHash *EntryHash // 签名内容：hash("prepare"+Digest)
-	CommitHash  *EntryHash // 签名内容: hash(“commit”+Digest)
+	CommitHash  *EntryHash // 签名内容: hash(“commit”+PrepareHash) // 因为有些节点先收到P再收到PP，没有Digest，所以用的是PrepareHash
 }
 
 //type Entry struct {
@@ -61,6 +61,10 @@ func (e *Entry) GetDigest() EntryHash {
 	// return cached hash if available
 	if e.Digest != nil {
 		return *e.Digest
+	}
+
+	if e.PP == nil {
+		panic(`PrePrepare args of entry is empty!!!`)
 	}
 
 	s512 := sha512.New()
@@ -108,7 +112,7 @@ func (e *Entry) GetCommitHash() EntryHash {
 
 	s512 := sha512.New()
 	s512.Write([]byte("commit"))
-	s512.Write(e.GetDigest().ToSlice())
+	s512.Write(e.GetPrepareHash().ToSlice())
 
 	e.CommitHash = new(EntryHash)
 	sum := s512.Sum(nil)
