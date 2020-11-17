@@ -161,20 +161,27 @@ func (pbftlinear *PBFTLinear) Propose(timeout bool) {
 		panic(`leader: ent.PP != nil`)
 	}
 	ent.PP = dPP
-	ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.GetPrepareHash().ToSlice())
-	if err != nil {
-		fmt.Printf("Propose: CreatePartialSig: error: %v\n", err)
-	}
 
 	if ent.PreparedCert != nil {
 		panic(`leader: ent.PreparedCert != nil`)
 	}
-	ent.PreparedCert = &data.QuorumCert{
+	qc := &data.QuorumCert{
 		Sigs:       make(map[config.ReplicaID]data.PartialSig),
 		SigContent: ent.GetPrepareHash(),
 	}
-	ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *ps
+	ent.PreparedCert = qc
 	ent.Mut.Unlock()
+
+	go func(e *data.Entry) { // 签名比较耗时，所以用goroutine来进行
+		ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, qc.SigContent.ToSlice())
+		if err != nil {
+			panic(err)
+		}
+		e.Mut.Lock()
+		ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *ps
+		e.Mut.Unlock()
+	}(ent)
+
 	pPP := proto.PP2Proto(dPP)
 
 	pbftlinear.BroadcastPrePrepareRequest(pPP, ent)
