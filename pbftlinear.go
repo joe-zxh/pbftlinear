@@ -172,18 +172,17 @@ func (pbftlinear *PBFTLinear) Propose(timeout bool) {
 	ent.PreparedCert = qc
 	ent.Mut.Unlock()
 
-	go func(e *data.Entry) { // 签名比较耗时，所以用goroutine来进行
+	go func() { // 签名比较耗时，所以用goroutine来进行
 		ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, qc.SigContent.ToSlice())
 		if err != nil {
 			panic(err)
 		}
-		e.Mut.Lock()
+		ent.Mut.Lock()
 		ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *ps
-		e.Mut.Unlock()
-	}(ent)
+		ent.Mut.Unlock()
+	}()
 
 	pPP := proto.PP2Proto(dPP)
-
 	pbftlinear.BroadcastPrePrepareRequest(pPP, ent)
 }
 
@@ -206,20 +205,15 @@ func (pbftlinear *PBFTLinear) BroadcastPrePrepareRequest(pPP *proto.PrePrepareAr
 
 						// leader先处理自己的entry的commit的签名
 						ent.Prepared = true
-						ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, ent.GetCommitHash().ToSlice())
-						if err != nil {
-							fmt.Printf("BroadcastPrePrepareRequest: CreatePartialSig: error: %v\n", err)
-							return
-						}
 						if ent.CommittedCert != nil {
 							panic(`leader: ent.CommittedCert != nil`)
 						}
 
-						ent.CommittedCert = &data.QuorumCert{
+						qc := &data.QuorumCert{
 							Sigs:       make(map[config.ReplicaID]data.PartialSig),
 							SigContent: ent.GetCommitHash(),
 						}
-						ent.CommittedCert.Sigs[pbftlinear.Config.ID] = *ps
+						ent.CommittedCert = qc
 
 						// 收拾收拾，准备broadcast prepare
 						pP := &proto.PrepareArgs{
@@ -228,6 +222,17 @@ func (pbftlinear *PBFTLinear) BroadcastPrePrepareRequest(pPP *proto.PrePrepareAr
 							QC:   proto.QuorumCertToProto(ent.PreparedCert),
 						}
 						ent.Mut.Unlock()
+
+						go func() { // 签名比较耗时，所以用goroutine来进行
+							ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, qc.SigContent.ToSlice())
+							if err != nil {
+								panic(err)
+							}
+							ent.Mut.Lock()
+							ent.CommittedCert.Sigs[pbftlinear.Config.ID] = *ps
+							ent.Mut.Unlock()
+						}()
+
 						pbftlinear.BroadcastPrepareRequest(pP, ent)
 					} else {
 						ent.Mut.Unlock()
