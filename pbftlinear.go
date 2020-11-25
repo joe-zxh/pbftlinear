@@ -198,10 +198,9 @@ func (pbftlinear *PBFTLinear) BroadcastPrePrepareRequest(pPP *proto.PrePrepareAr
 				}
 				dPS := pPPR.Sig.Proto2PartialSig()
 				ent.Mut.Lock()
-				if ent.Prepared == false &&
-					pbftlinear.SigCache.VerifySignature(*dPS, ent.GetPrepareHash()) {
+				if ent.Prepared == false {
 					ent.PreparedCert.Sigs[id] = *dPS
-					if len(ent.PreparedCert.Sigs) > int(2*pbftlinear.F) {
+					if len(ent.PreparedCert.Sigs) > int(2*pbftlinear.F) && pbftlinear.SigCache.VerifyQuorumCert(ent.PreparedCert) {
 
 						// leader先处理自己的entry的commit的签名
 						ent.Prepared = true
@@ -258,10 +257,9 @@ func (pbftlinear *PBFTLinear) BroadcastPrepareRequest(pP *proto.PrepareArgs, ent
 				}
 				dPS := pPR.Sig.Proto2PartialSig()
 				ent.Mut.Lock()
-				if ent.Committed == false &&
-					pbftlinear.SigCache.VerifySignature(*dPS, ent.GetCommitHash()) {
+				if ent.Committed == false {
 					ent.CommittedCert.Sigs[id] = *dPS
-					if len(ent.CommittedCert.Sigs) > int(2*pbftlinear.F) {
+					if len(ent.CommittedCert.Sigs) > int(2*pbftlinear.F) && pbftlinear.SigCache.VerifyQuorumCert(ent.CommittedCert) {
 
 						ent.Committed = true
 
@@ -437,7 +435,7 @@ func (pbftlinear *PBFTLinear) Commit(_ context.Context, pC *proto.CommitArgs) (*
 			}
 			ent.Mut.Unlock()
 			go pbftlinear.ApplyCommands(elem)
-		}else{
+		} else {
 			ent.Mut.Unlock()
 		}
 
