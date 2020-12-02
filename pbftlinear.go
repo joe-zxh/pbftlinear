@@ -151,39 +151,41 @@ func (pbftlinear *PBFTLinear) Propose(timeout bool) {
 		return
 	}
 
-	// leader先处理自己的entry的pp 以及 prepare的签名
-	pbftlinear.Mut.Lock()
-	ent := pbftlinear.GetEntry(data.EntryID{V: dPP.View, N: dPP.Seq})
-	pbftlinear.Mut.Unlock()
+	go func() {
+		// leader先处理自己的entry的pp 以及 prepare的签名
+		pbftlinear.Mut.Lock()
+		ent := pbftlinear.GetEntry(data.EntryID{V: dPP.View, N: dPP.Seq})
+		pbftlinear.Mut.Unlock()
 
-	ent.Mut.Lock()
-	if ent.PP != nil {
-		panic(`leader: ent.PP != nil`)
-	}
-	ent.PP = dPP
-
-	if ent.PreparedCert != nil {
-		panic(`leader: ent.PreparedCert != nil`)
-	}
-	qc := &data.QuorumCert{
-		Sigs:       make(map[config.ReplicaID]data.PartialSig),
-		SigContent: ent.GetPrepareHash(),
-	}
-	ent.PreparedCert = qc
-	ent.Mut.Unlock()
-
-	go func() { // 签名比较耗时，所以用goroutine来进行
-		ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, qc.SigContent.ToSlice())
-		if err != nil {
-			panic(err)
-		}
 		ent.Mut.Lock()
-		ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *ps
-		ent.Mut.Unlock()
-	}()
+		if ent.PP != nil {
+			panic(`leader: ent.PP != nil`)
+		}
+		ent.PP = dPP
 
-	pPP := proto.PP2Proto(dPP)
-	pbftlinear.BroadcastPrePrepareRequest(pPP, ent)
+		if ent.PreparedCert != nil {
+			panic(`leader: ent.PreparedCert != nil`)
+		}
+		qc := &data.QuorumCert{
+			Sigs:       make(map[config.ReplicaID]data.PartialSig),
+			SigContent: ent.GetPrepareHash(),
+		}
+		ent.PreparedCert = qc
+		ent.Mut.Unlock()
+
+		go func() { // 签名比较耗时，所以用goroutine来进行
+			ps, err := pbftlinear.SigCache.CreatePartialSig(pbftlinear.Config.ID, pbftlinear.Config.PrivateKey, qc.SigContent.ToSlice())
+			if err != nil {
+				panic(err)
+			}
+			ent.Mut.Lock()
+			ent.PreparedCert.Sigs[pbftlinear.Config.ID] = *ps
+			ent.Mut.Unlock()
+		}()
+
+		pPP := proto.PP2Proto(dPP)
+		pbftlinear.BroadcastPrePrepareRequest(pPP, ent)
+	}()
 }
 
 func (pbftlinear *PBFTLinear) BroadcastPrePrepareRequest(pPP *proto.PrePrepareArgs, ent *data.Entry) {

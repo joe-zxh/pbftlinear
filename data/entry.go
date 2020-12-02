@@ -94,6 +94,14 @@ func (e *Entry) GetPrepareHash() EntryHash {
 	}
 
 	s512 := sha512.New()
+
+	byte4 := make([]byte, 4)
+	binary.LittleEndian.PutUint32(byte4, uint32(e.PP.View))
+	s512.Write(byte4[:])
+
+	binary.LittleEndian.PutUint32(byte4, uint32(e.PP.Seq))
+	s512.Write(byte4[:])
+
 	s512.Write([]byte("prepare"))
 	s512.Write(e.GetDigest().ToSlice())
 

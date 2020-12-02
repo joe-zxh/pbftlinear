@@ -404,7 +404,7 @@ func (srv *pbftLinearServer) ExecCommand(_ context.Context, cmd *client.Command,
 			out(nil, status.Errorf(codes.InvalidArgument, "Failed to marshal command: %v", err))
 		}
 		srv.pbftlinear.AddCommand(data.Command(b))
-		go srv.pbftlinear.Propose(false)
+		srv.pbftlinear.Propose(false)
 	}
 
 	go func(id cmdID, finished chan struct{}) {
