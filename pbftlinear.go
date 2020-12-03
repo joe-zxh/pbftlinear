@@ -2,19 +2,13 @@ package pbftlinear
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/sha512"
-	"encoding/base64"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/joe-zxh/pbftlinear/data"
 	"github.com/joe-zxh/pbftlinear/util"
 	"log"
-	"math/big"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -24,7 +18,6 @@ import (
 	"github.com/joe-zxh/pbftlinear/internal/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/metadata"
 )
 
 var logger *log.Logger
@@ -271,7 +264,7 @@ func (pbftlinear *PBFTLinear) BroadcastPrepareRequest(pP *proto.PrepareArgs, ent
 							Seq:  ent.PP.Seq,
 							QC:   proto.QuorumCertToProto(ent.CommittedCert),
 						}
-						pbftlinear.BroadcastCommitRequest(pC)
+						go pbftlinear.BroadcastCommitRequest(pC)
 
 						// 对于leader来说，pp一定存在的，所以不需要先判断是否为nil
 						elem := &util.PQElem{
@@ -279,7 +272,7 @@ func (pbftlinear *PBFTLinear) BroadcastPrepareRequest(pP *proto.PrepareArgs, ent
 							C:   ent.PP.Commands,
 						}
 						ent.Mut.Unlock()
-						go pbftlinear.ApplyCommands(elem)
+						pbftlinear.ApplyCommands(elem)
 
 					} else {
 						ent.Mut.Unlock()
@@ -477,100 +470,10 @@ func (pbftlinear *PBFTLinear) ApplyCommands(elem *util.PQElem) {
 	pbftlinear.Mut.Unlock()
 }
 
-func (pbftlinear *PBFTLinear) ApplyCommands1() {
-	for i, sz := 0, pbftlinear.ApplyQueue.Length(); i < sz; i++ { // commit需要按global seq的顺序
-		m, err := pbftlinear.ApplyQueue.GetMin()
-		if err != nil {
-			break
-		}
-		if int(pbftlinear.Apply+1) == m.Pri {
-			pbftlinear.Apply++
-			cmds, ok := m.C.([]data.Command)
-			if ok {
-				pbftlinear.Exec <- cmds
-			}
-			pbftlinear.ApplyQueue.ExtractMin()
-
-		} else if int(pbftlinear.Apply+1) > m.Pri {
-			panic("This should already done")
-		} else {
-			break
-		}
-	}
-}
-
 func newPBFTLinearServer(pbftlinear *PBFTLinear) *pbftLinearServer {
 	pbftSrv := &pbftLinearServer{
 		PBFTLinear: pbftlinear,
 		clients:    make(map[context.Context]config.ReplicaID),
 	}
 	return pbftSrv
-}
-
-func (pbftlinear *pbftLinearServer) getClientID(ctx context.Context) (config.ReplicaID, error) {
-	pbftlinear.mut.RLock()
-	// fast path for known stream
-	if id, ok := pbftlinear.clients[ctx]; ok {
-		pbftlinear.mut.RUnlock()
-		return id, nil
-	}
-
-	pbftlinear.mut.RUnlock()
-	pbftlinear.mut.Lock()
-	defer pbftlinear.mut.Unlock()
-
-	// cleanup finished streams
-	for ctx := range pbftlinear.clients {
-		if ctx.Err() != nil {
-			delete(pbftlinear.clients, ctx)
-		}
-	}
-
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return 0, fmt.Errorf("getClientID: metadata not available")
-	}
-
-	v := md.Get("id")
-	if len(v) < 1 {
-		return 0, fmt.Errorf("getClientID: id field not present")
-	}
-
-	id, err := strconv.Atoi(v[0])
-	if err != nil {
-		return 0, fmt.Errorf("getClientID: cannot parse ID field: %w", err)
-	}
-
-	info, ok := pbftlinear.Config.Replicas[config.ReplicaID(id)]
-	if !ok {
-		return 0, fmt.Errorf("getClientID: could not find info about id '%d'", id)
-	}
-
-	v = md.Get("proof")
-	if len(v) < 2 {
-		return 0, fmt.Errorf("getClientID: No proof found")
-	}
-
-	var R, S big.Int
-	v0, err := base64.StdEncoding.DecodeString(v[0])
-	if err != nil {
-		return 0, fmt.Errorf("getClientID: could not decode proof: %v", err)
-	}
-	v1, err := base64.StdEncoding.DecodeString(v[1])
-	if err != nil {
-		return 0, fmt.Errorf("getClientID: could not decode proof: %v", err)
-	}
-	R.SetBytes(v0)
-	S.SetBytes(v1)
-
-	var b [4]byte
-	binary.LittleEndian.PutUint32(b[:], uint32(pbftlinear.Config.ID))
-	hash := sha512.Sum512(b[:])
-
-	if !ecdsa.Verify(info.PubKey, hash[:], &R, &S) {
-		return 0, fmt.Errorf("Invalid proof")
-	}
-
-	pbftlinear.clients[ctx] = config.ReplicaID(id)
-	return config.ReplicaID(id), nil
 }
